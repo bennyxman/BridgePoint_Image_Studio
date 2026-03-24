@@ -2,7 +2,7 @@
 
 **Professional Real Estate Image Editing** — by BridgePointAfreuropa
 
-🔗 **Live:** [https://bennyxman.github.io/ccc-image-studio](https://bennyxman.github.io/ccc-image-studio)
+🔗 **Live:** [[https://bennyxman.github.io/bridgepoint_Image_studio](https://bennyxman.github.io/bridgepoint_Image_studio))
 
 🌍 Deutsch | English | Español | Português | Français
 
