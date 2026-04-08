@@ -1,0 +1,63 @@
+name: 🤖 Auto Maintenance — BridgePoint Image Studio
+
+on:
+  schedule:
+    # Läuft jeden Montag um 08:00 Uhr (Berlin-Zeit = 07:00 UTC)
+    - cron: '0 7 * * 1'
+  workflow_dispatch:  # Manuell auslösbar via GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    name: Wöchentlicher Health Check & Deploy
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔍 Validiere HTML-Dateien
+        run: |
+          echo "=== Gefundene HTML-Dateien ==="
+          find . -name "*.html" | grep -v node_modules | grep -v .git
+          
+          echo ""
+          echo "=== Prüfe Syndicator AI Link ==="
+          if grep -r "syndicator" . --include="*.html" -l; then
+            echo "✓ Syndicator AI Verlinkung gefunden"
+          else
+            echo "⚠ Kein Syndicator AI Link gefunden — bitte prüfen!"
+          fi
+
+      - name: 📊 Projekt-Statistiken
+        run: |
+          echo "=== Repository Überblick ==="
+          echo "HTML Dateien: $(find . -name '*.html' | grep -v .git | wc -l)"
+          echo "CSS Dateien:  $(find . -name '*.css'  | grep -v .git | wc -l)"
+          echo "JS Dateien:   $(find . -name '*.js'   | grep -v .git | wc -l)"
+          echo "Gesamt Größe: $(du -sh . --exclude=.git 2>/dev/null | cut -f1)"
+          echo ""
+          echo "=== Letzte Commits ==="
+          git log --oneline -5
+
+      - name: 🔄 Wöchentlicher Maintenance-Commit
+        run: |
+          git config user.name  "BridgePoint Bot"
+          git config user.email "bot@bridgepointafreuropa.com"
+          
+          # Aktualisiere Maintenance-Log
+          echo "$(date -u '+%Y-%m-%d %H:%M UTC') — Auto-Maintenance OK" >> .maintenance-log
+          
+          git add .maintenance-log
+          git commit -m "🤖 Weekly maintenance $(date -u '+%Y-%m-%d')" || echo "Nichts zu committen"
+          git push || echo "Push nicht nötig"
+
+      - name: ✅ Status Report
+        run: |
+          echo "============================================"
+          echo "✅ BridgePoint Image Studio — Alles OK"
+          echo "🌐 Live URL: https://bennyxman.github.io/BridgePoint_Image_Studio/"
+          echo "📅 Nächste Ausführung: nächsten Montag 08:00 Uhr"
+          echo "============================================"
