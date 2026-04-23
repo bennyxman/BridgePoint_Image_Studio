@@ -391,44 +391,130 @@ function setAdj(k,v){ph();S.adj[k]=v;render()}
 function applyFlt(f){ph();S.adj={...DA,...f};render()}
 function applyRE(p){ph();S.adj={...DA,...p.v};render()}
 
-// BG removal
-function removeBg(x,y){if(!imgEl)return;S.proc=true;render();setTimeout(()=>{
-  const c=document.createElement('canvas');c.width=imgEl.naturalWidth;c.height=imgEl.naturalHeight;
-  const ctx=c.getContext('2d');ctx.drawImage(imgEl,0,0);const d=ctx.getImageData(0,0,c.width,c.height);
-  const px=d.data,w=c.width,h=c.height,tol=S.bgT;
-  const idx=(y*w+x)*4;const tr=px[idx],tg=px[idx+1],tb=px[idx+2];
-  const vis=new Uint8Array(w*h),mask=new Uint8Array(w*h),stk=[[x,y]];
-  while(stk.length){const[cx,cy]=stk.pop();if(cx<0||cx>=w||cy<0||cy>=h)continue;const pi=cy*w+cx;if(vis[pi])continue;vis[pi]=1;
-    const i=pi*4;if(Math.abs(px[i]-tr)<=tol&&Math.abs(px[i+1]-tg)<=tol&&Math.abs(px[i+2]-tb)<=tol){mask[pi]=1;stk.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1])}}
-  const m2=new Uint8Array(mask);for(let p=0;p<2;p++){for(let yy=1;yy<h-1;yy++)for(let xx=1;xx<w-1;xx++){const i=yy*w+xx;const s=mask[i-1]+mask[i+1]+mask[i-w]+mask[i+w];if(s>=3)m2[i]=1;if(s<=1)m2[i]=0}mask.set(m2)}
-  for(let i=0;i<w*h;i++)if(mask[i])px[i*4+3]=0;
-  ctx.putImageData(d,0,0);S.images[S.ci].src=c.toDataURL('image/png');S.proc=false;ph();toast(t('tbgr'));render();
-},50)}
+// ═══════════════════════════════════════════════════════════════
+// OPTIMIERTE HINTERGRUND-ENTFERNUNG (Web Worker + Performance)
+// ═══════════════════════════════════════════════════════════════
 
-function replaceBgC(clr){if(!imgEl)return;const c=document.createElement('canvas');c.width=imgEl.naturalWidth;c.height=imgEl.naturalHeight;const ctx=c.getContext('2d');if(clr!=='transparent'){ctx.fillStyle=clr;ctx.fillRect(0,0,c.width,c.height)}ctx.drawImage(imgEl,0,0);S.images[S.ci].src=c.toDataURL('image/png');ph();toast(t('tbgp'));render()}
-function replaceBgI(file){if(!file||!imgEl)return;const r=new FileReader();r.onload=e=>{const bg=new Image();bg.onload=()=>{const c=document.createElement('canvas');c.width=imgEl.naturalWidth;c.height=imgEl.naturalHeight;const ctx=c.getContext('2d');ctx.drawImage(bg,0,0,c.width,c.height);ctx.drawImage(imgEl,0,0);S.images[S.ci].src=c.toDataURL('image/png');ph();toast(t('tbgp'));render()};bg.src=e.target.result};r.readAsDataURL(file)}
+let bgWorker = null;
 
-function doExport(){
-  if(!imgEl)return;const c=document.createElement('canvas');const isR=S.rot%180!==0;const cw=isR?imgEl.naturalHeight:imgEl.naturalWidth;const ch=isR?imgEl.naturalWidth:imgEl.naturalHeight;
-  c.width=cw;c.height=ch;const ctx=c.getContext('2d');ctx.save();ctx.translate(cw/2,ch/2);ctx.rotate(S.rot*Math.PI/180);ctx.scale(S.fh?-1:1,S.fv?-1:1);ctx.filter=bf(S.adj);ctx.drawImage(imgEl,-imgEl.naturalWidth/2,-imgEl.naturalHeight/2);ctx.restore();
-  const sc=imgEl.naturalWidth/(wE?.offsetWidth||imgEl.naturalWidth);
-  S.ann.forEach(a=>{if(a.type==='path'){ctx.beginPath();ctx.strokeStyle=a.color;ctx.lineWidth=a.size*sc;ctx.lineCap='round';ctx.lineJoin='round';a.points.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x*sc,p.y*sc);else ctx.lineTo(p.x*sc,p.y*sc)});ctx.stroke()}else if(a.type==='text'){ctx.font=`bold ${a.size*6*sc}px 'DM Sans',sans-serif`;ctx.fillStyle=a.color;ctx.fillText(a.text,a.x*sc,a.y*sc)}});
-  if(S.wm){ctx.save();ctx.globalAlpha=S.wo/100;const fs=Math.max(16,cw*.028);ctx.font=`bold ${fs}px 'DM Sans',sans-serif`;ctx.fillStyle='#fff';ctx.strokeStyle='rgba(0,0,0,.5)';ctx.lineWidth=2;const m=ctx.measureText(S.wm);const pd=fs;let wx,wy;if(S.wp==='tl'){wx=pd;wy=pd+fs}else if(S.wp==='tr'){wx=cw-m.width-pd;wy=pd+fs}else if(S.wp==='bl'){wx=pd;wy=ch-pd}else{wx=cw-m.width-pd;wy=ch-pd}ctx.strokeText(S.wm,wx,wy);ctx.fillText(S.wm,wx,wy);ctx.restore()}
-  if(S.pi.show){ctx.save();const bh=ch*.08;const gy=ch-bh;const grd=ctx.createLinearGradient(0,gy,0,ch);grd.addColorStop(0,'transparent');grd.addColorStop(1,'rgba(0,0,0,.75)');ctx.fillStyle=grd;ctx.fillRect(0,gy,cw,bh);
-    const fs1=Math.max(14,cw*.022);const fs2=Math.max(10,cw*.014);const pd=cw*.02;
-    if(S.pi.name){ctx.font=`bold ${fs1}px 'DM Sans',sans-serif`;ctx.fillStyle='#fff';ctx.fillText(S.pi.name,pd,ch-bh*.35)}
-    if(S.pi.loc){ctx.font=`${fs2}px 'DM Sans',sans-serif`;ctx.fillStyle='rgba(255,255,255,.7)';ctx.fillText(S.pi.loc,pd,ch-bh*.12)}
-    if(S.pi.brand){ctx.font=`bold ${fs2}px 'DM Sans',sans-serif`;ctx.fillStyle='#c8956c';const bm=ctx.measureText(S.pi.brand);ctx.fillText(S.pi.brand,cw-bm.width-pd,ch-bh*.2)}
-    if(S.pi.date){ctx.font=`${Math.max(9,cw*.01)}px 'DM Sans',sans-serif`;ctx.fillStyle='rgba(255,255,255,.5)';const dm=ctx.measureText(S.pi.date);ctx.fillText(S.pi.date,cw-dm.width-pd,ch-bh*.5)}
-    ctx.restore()}
-  const link=document.createElement('a');const ext=S.fmt==='jpeg'?'jpg':'png';link.download=`BP_${curImg()?.name||'image'}.${ext}`;link.href=S.fmt==='jpeg'?c.toDataURL('image/jpeg',.92):c.toDataURL('image/png');link.click();toast(t('te'))
+function initBackgroundWorker() {
+  if (bgWorker) return;
+  
+  const workerCode = `
+    self.addEventListener('message', (e) => {
+      const { imageData, width, height, startX, startY, tolerance } = e.data;
+      
+      // Flood Fill mit Stack (optimiert)
+      const data = new Uint8ClampedArray(imageData);
+      const idx = (startY * width + startX) * 4;
+      const targetR = data[idx];
+      const targetG = data[idx + 1];
+      const targetB = data[idx + 2];
+      
+      const mask = new Uint8Array(width * height);
+      const stack = [[startX, startY]];
+      const tolor = tolerance;
+      
+      while (stack.length > 0) {
+        const [cx, cy] = stack.pop();
+        if (cx < 0 || cx >= width || cy < 0 || cy >= height) continue;
+        const pos = cy * width + cx;
+        if (mask[pos]) continue;
+        
+        const p = pos * 4;
+        const dr = Math.abs(data[p] - targetR);
+        const dg = Math.abs(data[p + 1] - targetG);
+        const db = Math.abs(data[p + 2] - targetB);
+        
+        if (dr <= tolor && dg <= tolor && db <= tolor) {
+          mask[pos] = 1;
+          stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+        }
+      }
+      
+      // Rauschen entfernen (Median-Filter vereinfacht)
+      const cleaned = new Uint8Array(mask);
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          const pos = y * width + x;
+          let sum = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              sum += mask[(y + dy) * width + (x + dx)];
+            }
+          }
+          cleaned[pos] = sum >= 5 ? 1 : 0;
+        }
+      }
+      
+      self.postMessage({ mask: cleaned.buffer, width, height }, [cleaned.buffer]);
+    });
+  `;
+  
+  const blob = new Blob([workerCode], { type: 'application/javascript' });
+  const workerUrl = URL.createObjectURL(blob);
+  bgWorker = new Worker(workerUrl);
+  URL.revokeObjectURL(workerUrl);
 }
 
-function applyCrop(){if(!S.cs||!S.ce||!imgEl||!wE)return;const r=wE.getBoundingClientRect();const sx=imgEl.naturalWidth/r.width,sy=imgEl.naturalHeight/r.height;const x1=Math.min(S.cs.x,S.ce.x)*sx,y1=Math.min(S.cs.y,S.ce.y)*sy,cw=Math.abs(S.ce.x-S.cs.x)*sx,ch=Math.abs(S.ce.y-S.cs.y)*sy;if(cw<10||ch<10)return;const c=document.createElement('canvas');c.width=cw;c.height=ch;c.getContext('2d').drawImage(imgEl,x1,y1,cw,ch,0,0,cw,ch);S.images[S.ci].src=c.toDataURL('image/png');S.cs=S.ce=null;S.cm=false;ph();toast(t('tc'));render()}
-function applyMos(){if(!S.ms||!S.me||!imgEl||!wE)return;const r=wE.getBoundingClientRect();const sx=imgEl.naturalWidth/r.width,sy=imgEl.naturalHeight/r.height;const x1=Math.round(Math.min(S.ms.x,S.me.x)*sx),y1=Math.round(Math.min(S.ms.y,S.me.y)*sy),mw=Math.round(Math.abs(S.me.x-S.ms.x)*sx),mh=Math.round(Math.abs(S.me.y-S.ms.y)*sy);if(mw<5||mh<5)return;const c=document.createElement('canvas');c.width=imgEl.naturalWidth;c.height=imgEl.naturalHeight;const ctx=c.getContext('2d');ctx.drawImage(imgEl,0,0);const ps=14;const d=ctx.getImageData(x1,y1,mw,mh);for(let y=0;y<mh;y+=ps)for(let x=0;x<mw;x+=ps){const i=(y*mw+x)*4;ctx.fillStyle=`rgb(${d.data[i]},${d.data[i+1]},${d.data[i+2]})`;ctx.fillRect(x1+x,y1+y,ps,ps)}S.images[S.ci].src=c.toDataURL('image/png');S.ms=S.me=null;ph();toast(t('tm'));render()}
-function gp(e,el){const r=el.getBoundingClientRect();const cx=e.touches?e.touches[0].clientX:e.clientX;const cy=e.touches?e.touches[0].clientY:e.clientY;return{x:cx-r.left,y:cy-r.top}}
-function resetAll(){ph();S.adj={...DA};S.rot=0;S.fh=false;S.fv=false;S.fr=0;S.ann=[];S.wm='';S.pi={...S.pi,show:false};if(curOrig())S.images[S.ci].src=curOrig();toast(t('trst'));render()}
+function removeBgOptimized(x, y) {
+  if (!imgEl) return;
+  
+  S.proc = true;
+  render();
+  
+  // Kleine Verzögerung für UI-Update
+  setTimeout(() => {
+    const img = imgEl;
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    
+    // Canvas für Bilddaten
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, w, h);
+    
+    initBackgroundWorker();
+    
+    bgWorker.onmessage = (e) => {
+      const { mask, width, height } = e.data;
+      const maskArray = new Uint8Array(mask);
+      
+      // Transparenz anwenden
+      const data = imageData.data;
+      for (let i = 0; i < width * height; i++) {
+        if (maskArray[i] === 1) {
+          data[i * 4 + 3] = 0;
+        }
+      }
+      
+      ctx.putImageData(imageData, 0, 0);
+      S.images[S.ci].src = canvas.toDataURL('image/png');
+      S.proc = false;
+      ph();
+      toast(t('tbgr'));
+      render();
+      
+      bgWorker.onmessage = null;
+    };
+    
+    bgWorker.postMessage({
+      imageData: imageData.data.buffer,
+      width: w,
+      height: h,
+      startX: Math.min(Math.max(0, x), w - 1),
+      startY: Math.min(Math.max(0, y), h - 1),
+      tolerance: S.bgT
+    }, [imageData.data.buffer]);
+    
+  }, 50);
+}
 
+// Originale removeBg Funktion ersetzen durch:
+window.removeBg = removeBgOptimized;
 // Templates
 function saveTpl(){if(!S.tplName.trim())return;const tpl={name:S.tplName.trim(),adj:{...S.adj},fr:S.fr,wm:S.wm,wp:S.wp,wo:S.wo,pi:{...S.pi}};S.tpls.push(tpl);localStorage.setItem('bp_tpls',JSON.stringify(S.tpls));S.tplName='';toast(t('tpl_saved'));render()}
 function applyTpl(i){const tpl=S.tpls[i];if(!tpl)return;ph();S.adj={...DA,...tpl.adj};S.fr=tpl.fr;S.wm=tpl.wm||'';S.wp=tpl.wp||'br';S.wo=tpl.wo||40;if(tpl.pi)S.pi={...S.pi,...tpl.pi};toast(t('tpl_applied'));render()}
